@@ -1,0 +1,234 @@
+# HomeWork 1:
+# Given the data, perform the turning point test and check whether accept H0 or reject it.
+
+# Creating Sequence Vector:
+seq = c(3, 8, 5, 7, 6, 4, 9, 2)
+
+# Defining length of the sequence:
+n = length(seq)
+
+# Initialize u to calculate number of turning points: 
+u = 0
+for (i in 2:(n-1)){
+  # Calculating peek and trough
+  if((seq[i-1] < seq[i] & seq[i] > seq[i+1]) || (seq[i-1] > seq[i] & seq[i] < seq[i+1])){
+    u = u+1
+  }
+}
+
+# Under H0, Calculating E(p) and V(p):
+
+expectation_p = (2*(n-2))/3
+variance_p = (16*n-29)/90
+
+p = u
+
+# Calculating Z:
+Z = (p - expectation_p)/sqrt(variance_p)
+
+# Calculating Z-score:
+Z_score = qnorm(1-(0.05/2))
+
+if(abs(Z) > Z_score){
+  print("Reject H0")
+}else{
+  print("Accept H0")
+}
+
+
+
+# HomeWork 2:
+
+library(fpp3)
+ACF
+
+data("vic_elec")
+
+# Inspect the dataset
+head(vic_elec)
+
+# Check for missing values
+sum(is.na(vic_elec$Demand))
+
+# Trend test:
+
+# Impute missing values using the mean (or other suitable methods)
+vic_elec$Demand[is.na(vic_elec$Demand)] <- mean(vic_elec$Demand, na.rm = TRUE)
+
+# Aggregate data to monthly demand
+monthly_demand <- vic_elec %>%
+  index_by(month = yearmonth(Time)) %>%
+  summarize(monthly_demand = sum(Demand))
+
+# Convert 'month' to a numeric sequence representing the order of the months
+monthly_demand$month_numeric <- as.numeric(monthly_demand$month)
+
+# Function to calculate Kendall's Tau
+kendalls_tau <- function(x, y) {
+  n <- length(x)
+  concordant <- 0
+  discordant <- 0
+  
+  for (i in 1:(n-1)) {
+    for (j in (i+1):n) {
+      # Check for concordance/discordance
+      if ((x[i] < x[j] && y[i] < y[j]) || (x[i] > x[j] && y[i] > y[j])) {
+        concordant <- concordant + 1
+      } else if ((x[i] < x[j] && y[i] > y[j]) || (x[i] > x[j] && y[i] < y[j])) {
+        discordant <- discordant + 1
+      }
+    }
+  }
+  
+  tau <- (concordant - discordant) / (concordant + discordant)
+  return(tau)
+}
+
+# Apply the function to our data
+tau_value <- kendalls_tau(monthly_demand$month_numeric, monthly_demand$monthly_demand)
+tau_value
+
+# Normal approximation of the variance of Tau
+n <- length(monthly_demand$month_numeric)
+var_tau <- (2 * (2 * n + 5)) / (9 * n * (n - 1))
+
+# Compute the Z-score
+z_score <- tau_value / sqrt(var_tau)
+
+# Compute the p-value
+p_value <- 2 * (1 - pnorm(abs(z_score)))
+
+# Print results
+cat("Kendall's Tau:", tau_value, "\n")
+cat("Z-score:", z_score, "\n")
+cat("p-value:", p_value, "\n")
+
+
+if(p_value < 0.05){
+  cat("Reject the null hypothesis\n")
+} else {
+  cat("Fail to reject the null hypothesis\n")
+}
+
+# Seasonality test:
+
+# Since no increasing or decreasing trend was detected, we can directly jump to rank the observations:
+
+# Aggregate data to monthly demand
+monthly_demand <- vic_elec %>%
+  index_by(year_month = yearmonth(Time)) %>%
+  summarize(monthly_demand = sum(Demand))
+
+# Extract year and month
+monthly_demand <- monthly_demand %>%
+  mutate(
+    year = year(year_month),
+    month = month(year_month)
+  )
+
+# Rank the observations within each year
+monthly_demand <- monthly_demand %>%
+  group_by(year) %>%
+  mutate(month_rank = rank(monthly_demand)) %>%
+  ungroup()
+
+head(monthly_demand)
+
+# Calculate M_i for each month
+M_i <- monthly_demand %>%
+  group_by(month) %>%
+  summarize(M_i = sum(month_rank))
+
+print(M_i)
+
+# Number of years and months
+r <- length(unique(monthly_demand$year))
+c <- length(unique(monthly_demand$month))
+
+# Calculate X
+X <- (12 / (r * c * (c + 1))) * sum((M_i$M_i - r * (c + 1) / 2)^2)
+print(X)
+
+# Degrees of freedom
+df <- c - 1
+
+# Critical value from chi-square distribution
+chi_square_critical <- qchisq(0.95, df)
+print(chi_square_critical)
+
+# Compare X with chi-square critical value
+if(X > chi_square_critical) {
+  cat("Reject the null hypothesis: There is seasonality in the data.\n")
+} else {
+  cat("Fail to reject the null hypothesis: No significant seasonality detected.\n")
+}
+
+
+# Turning point test:
+
+# Aggregate data to monthly demand
+monthly_demand <- vic_elec %>%
+  index_by(year_month = yearmonth(Time)) %>%
+  summarize(monthly_demand = sum(Demand))
+
+# Convert 'year_month' to a numeric sequence representing time order
+monthly_demand$time <- 1:nrow(monthly_demand)
+
+head(monthly_demand)
+
+# Calculate turning points
+n <- nrow(monthly_demand)
+U <- rep(0, n)
+
+for (i in 2:(n-1)) {
+  if ((monthly_demand$monthly_demand[i] > monthly_demand$monthly_demand[i-1]) & 
+      (monthly_demand$monthly_demand[i] > monthly_demand$monthly_demand[i+1])) {
+    U[i] <- 1  # Peak
+  } else if ((monthly_demand$monthly_demand[i] < monthly_demand$monthly_demand[i-1]) & 
+             (monthly_demand$monthly_demand[i] < monthly_demand$monthly_demand[i+1])) {
+    U[i] <- 1  # Trough
+  }
+}
+
+# Number of turning points
+p <- sum(U)
+cat("Number of turning points:", p, "\n")
+
+# Expected value of p under H0
+E_p <- (2 * (n - 2)) / 3
+
+# Variance of p under H0
+V_p <- (16 * n - 29) / 90
+
+cat("Expected number of turning points:", E_p, "\n")
+cat("Variance of turning points:", V_p, "\n")
+
+# Calculate Z-score
+Z <- (p - E_p) / sqrt(V_p)
+cat("Z-score:", Z, "\n")
+
+# Calculate the p-value
+p_value <- 2 * (1 - pnorm(abs(Z)))
+
+cat("p-value:", p_value, "\n")
+
+# Make the decision
+if(p_value < 0.05) {
+  cat("Reject the null hypothesis: The series is not random.\n")
+} else {
+  cat("Fail to reject the null hypothesis: The series is random.\n")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
